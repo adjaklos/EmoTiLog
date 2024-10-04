@@ -1,0 +1,109 @@
+import tkinter
+from tkinter import ttk
+from tkinter import messagebox
+import sqlite3
+
+# Establish database connection
+conn = sqlite3.connect('emotion_data2.db')
+cursor = conn.cursor()
+
+# Check if the password column exists and recreate table if it doesn't
+try:
+    cursor.execute("SELECT password FROM EmoTiLog LIMIT 1")
+except sqlite3.OperationalError:
+    print("Updating database schema...")
+    cursor.execute("DROP TABLE IF EXISTS EmoTiLog")
+    cursor.execute('''
+    CREATE TABLE EmoTiLog
+    (user_id INTEGER PRIMARY KEY AUTOINCREMENT, firstname TEXT, lastname TEXT, password TEXT, mood1 INT, mood2 INT, mood3 INT)
+    ''')
+    conn.commit()
+    print("Database schema updated.")
+
+def authenticate_user(firstname, lastname):
+    """ Checks if the user exists and returns the password if it exists. """
+    cursor.execute("SELECT password FROM EmoTiLog WHERE firstname=? AND lastname=?", (firstname, lastname))
+    result = cursor.fetchone()
+    return result
+
+def fetch_mood_changes(firstname, lastname):
+    cursor.execute("SELECT mood1, mood2, mood3 FROM EmoTiLog WHERE firstname=? AND lastname=?", (firstname, lastname))
+    result = cursor.fetchone()
+    return result
+
+def update_user_mood(firstname, lastname, moods):
+    cursor.execute("UPDATE EmoTiLog SET mood1=?, mood2=?, mood3=? WHERE firstname=? AND lastname=?", (moods[0], moods[1], moods[2], firstname, lastname))
+    conn.commit()
+
+def enter_data():
+    firstname = first_name_entry.get()
+    lastname = last_name_entry.get()
+    password = password_entry.get()
+    moods = [int(mood1_spinbox.get()), int(mood2_spinbox.get()), int(mood3_spinbox.get())]
+    if firstname and lastname and password:
+        existing_user = authenticate_user(firstname, lastname)
+        if existing_user:
+            if existing_user[0] == password:
+                existing_moods = fetch_mood_changes(firstname, lastname)
+                tkinter.messagebox.showinfo("Mood Logged", "Your current mood has been logged.")
+                if existing_moods:
+                    mood_changes = [(new - old) / old * 100 if old != 0 else 0 for new, old in zip(moods, existing_moods)]
+                    mood_changes_str = ', '.join(f"{change:.0f}%" for change in mood_changes)
+                    tkinter.messagebox.showinfo("Mood Update", f"Percentage changes in mood: {mood_changes_str}")
+                update_user_mood(firstname, lastname, moods)
+                
+            else:
+                tkinter.messagebox.showerror("Authentication Error", "Invalid password. Please try again.")
+        else:
+            # No existing user found, so create new user
+            cursor.execute("INSERT INTO EmoTiLog (firstname, lastname, password, mood1, mood2, mood3) VALUES (?, ?, ?, ?, ?, ?)",
+                           (firstname, lastname, password, *moods))
+            conn.commit()
+            tkinter.messagebox.showinfo("New User", "Welcome! Your account has been created and your mood has been logged.")
+    else:
+        tkinter.messagebox.showerror("Error", "You must complete all fields.")
+
+window = tkinter.Tk()
+window.title("EmoTiLog")
+window.configure(bg='lightblue')
+
+frame = tkinter.Frame(window, bg='lightblue')
+frame.pack(padx=20, pady=20)
+
+user_info_frame = tkinter.LabelFrame(frame, text="User Information", bg='lightblue')
+user_info_frame.grid(row=0, column=0, padx=10, pady=10, sticky='news')
+
+frame.grid_columnconfigure(0, weight=1)  # Ensures column centers content
+
+tkinter.Label(user_info_frame, text="First Name", bg='lightblue').grid(row=0, column=0, sticky='ew')
+first_name_entry = tkinter.Entry(user_info_frame)
+first_name_entry.grid(row=0, column=1, sticky='ew')
+
+tkinter.Label(user_info_frame, text="Last Name", bg='lightblue').grid(row=0, column=2, sticky='ew')
+last_name_entry = tkinter.Entry(user_info_frame)
+last_name_entry.grid(row=0, column=3, sticky='ew')
+
+tkinter.Label(user_info_frame, text="Password", bg='lightblue').grid(row=0, column=4, sticky='news')
+password_entry = tkinter.Entry(user_info_frame, show="*")
+password_entry.grid(row=0, column=5, sticky='news')
+
+user_info_frame.grid_columnconfigure(tuple(range(6)), weight=1)  # Ensures each element is evenly spaced and centered
+
+# Mood Frames
+def create_mood_frame(parent, label, desc, row):
+    mood_frame = tkinter.LabelFrame(parent, text=label, bg='lightyellow', padx=5, pady=5)
+    mood_frame.grid(row=row, column=0, padx=10, pady=5, sticky='news')
+    tkinter.Label(mood_frame, text=desc, bg='lightyellow').grid(row=0, column=0, sticky='news')
+    spinbox = tkinter.Spinbox(mood_frame, from_=1, to=5)
+    spinbox.grid(row=1, column=0, sticky='news')
+    parent.grid_columnconfigure(0, weight=1)  # Ensure the frame expands to fill the space
+    return spinbox
+
+mood1_spinbox = create_mood_frame(frame, "Energy Level", "How do you feel about your energy today?", 1)
+mood2_spinbox = create_mood_frame(frame, "Happiness", "How happy do you feel today?", 2)
+mood3_spinbox = create_mood_frame(frame, "Stress", "How stressed do you feel today?", 3)
+
+button = tkinter.Button(frame, text="Log Mood", command=enter_data, bg='lightgreen')
+button.grid(row=4, column=0, sticky="ew", padx=20, pady=10)
+
+window.mainloop()
